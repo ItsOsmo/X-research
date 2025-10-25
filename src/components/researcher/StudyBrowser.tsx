@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -9,14 +9,15 @@ import { Slider } from '@/components/ui/slider';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { 
-  ArrowLeft, 
-  Search, 
-  Filter, 
-  Clock, 
-  MapPin, 
-  DollarSign, 
-  Users, 
+import { supabase } from '@/integrations/supabase/client';
+import {
+  ArrowLeft,
+  Search,
+  Filter,
+  Clock,
+  MapPin,
+  DollarSign,
+  Users,
   Calendar,
   Star,
   Briefcase,
@@ -59,6 +60,8 @@ export const StudyBrowser = ({ onBack }: StudyBrowserProps) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('all');
   const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
+  const [studies, setStudies] = useState<CardStudy[]>([]);
+  const [loading, setLoading] = useState(true);
   const [filters, setFilters] = useState<FilterState>({
     compensationRange: [0, 200],
     durationRange: [0, 180],
@@ -69,8 +72,46 @@ export const StudyBrowser = ({ onBack }: StudyBrowserProps) => {
     deadlineFilter: 'all'
   });
 
-  // Mock data - in real app this would come from database
-  const studies: CardStudy[] = [
+  useEffect(() => {
+    loadStudies();
+  }, []);
+
+  const loadStudies = async () => {
+    setLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('studies')
+        .select('*')
+        .eq('status', 'active')
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+
+      const transformedStudies: CardStudy[] = (data || []).map(study => ({
+        id: study.id,
+        title: study.title,
+        description: study.description || '',
+        compensation: study.compensation || 0,
+        duration: study.duration || 0,
+        location: (study.location as 'remote' | 'in-person' | 'hybrid') || 'remote',
+        category: study.category || 'Uncategorized',
+        participants_needed: study.participants_needed || 0,
+        participants_current: 0,
+        requirements: (study.requirements as unknown as string[]) || [],
+        rating: 4.8,
+        company: 'Research Team',
+        deadline: study.deadline || ''
+      }));
+
+      setStudies(transformedStudies);
+    } catch (error) {
+      console.error('Error loading studies:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const mockStudies: CardStudy[] = [
     {
       id: '1',
       title: 'User Interface Design Feedback Study',
@@ -133,7 +174,7 @@ export const StudyBrowser = ({ onBack }: StudyBrowserProps) => {
     }
   ];
 
-  const categories = ['all', 'UX Research', 'Market Research', 'Healthcare', 'Finance', 'Technology'];
+  const categories = ['all', 'UX Research', 'Market Research', 'Healthcare', 'Finance', 'Technology', 'Education', 'Psychology', 'Product Testing'];
   const locations = ['remote', 'in-person', 'hybrid'];
 
   const resetFilters = () => {
@@ -195,7 +236,8 @@ export const StudyBrowser = ({ onBack }: StudyBrowserProps) => {
     return true;
   };
 
-  let filteredStudies = studies.filter(study => {
+  const allStudies = studies.length > 0 ? studies : mockStudies;
+  let filteredStudies = allStudies.filter(study => {
     const matchesSearch = study.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
                          study.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
                          study.company.toLowerCase().includes(searchQuery.toLowerCase());
@@ -558,7 +600,13 @@ export const StudyBrowser = ({ onBack }: StudyBrowserProps) => {
         </div>
 
         {/* Studies Grid */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {loading ? (
+          <div className="text-center py-12">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
+            <p className="text-muted-foreground">Loading studies...</p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {filteredStudies.map((study) => {
             const LocationIcon = getLocationIcon(study.location);
             const progressPercentage = (study.participants_current / study.participants_needed) * 100;
@@ -652,8 +700,9 @@ export const StudyBrowser = ({ onBack }: StudyBrowserProps) => {
             );
           })}
         </div>
+        )}
 
-        {filteredStudies.length === 0 && (
+        {!loading && filteredStudies.length === 0 && (
           <Card className="text-center py-12">
             <CardContent>
               <Search className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
